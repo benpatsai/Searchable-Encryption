@@ -6,20 +6,39 @@
 
 import rpclib
 import sys
-import hashlib
-from debug import *
+import shutil
+import os
 
-class MyServer(rpclib.RpcServer):
-    def rpc_search(self, **kwargs):
-        return ''
+class SchemeTestServer(rpclib.RpcServer):
+
+    def rpc_search(self, user, keyword):
+        resultlist = []
+        filelists = os.listdir(user + '/')
+        for f in filelists:
+            linestring = open(user+'/'+f, 'r').read()
+            linestring += ' '
+            linestring = linestring.replace('\n',' ')
+            words = linestring.split(' ')
+            if keyword in words:
+                resultlist.append(f)
+
+        return resultlist
+
+    def rpc_upload(self, user, path, filename):
+        userdir = user + '/' 
+        if not os.path.exists(userdir):
+            os.mkdir(userdir,0777)
+        shutil.copy2(path, userdir + filename)
+        return 'success'
+
+    def rpc_request1(self, **kwargs):
+        return 'response1'
         
-    def rpc_echo(self, **kwargs):
-        print >>sys.stderr, 'running echo', kwargs
-        return kw_sorted(kwargs)
+    def rpc_request2(self, **kwargs):
+        return 'response2'
     
 (_, dummy_zookld_fd, sockpath) = sys.argv
     
-s = MyRpcServer()
-setattr(s, 'rpc_hash take\ntwo', MyRpcServer.rpc_hash.__get__(s, MyRpcServer))
+s = SchemeTestServer()
 s.run_sockpath_fork(sockpath)
 

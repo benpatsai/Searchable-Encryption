@@ -1,39 +1,13 @@
 #!/usr/bin/python
 
+import client 
 
+user = 'user1'
+# client.upload(user, path, filename)
+client.upload(user, '12345', 'test_12345')
+client.upload(user, '2468', 'test_2468')
+client.upload(user, '13579', 'test_13579')
 
-# This function should include file encryption and any pre-processing
-# Input: upload file path 
-# Output: files(encrypted file, data structures) that really need to upload
-
-def fileUpload(path):
-
-    uploadFileList = []
-    uploadFileList.append()
-    return uploadFileList
-
-    
-def search(keyword, fileList):
-    resultList = []
-    for f in fileList
-        linestring = open(f, 'r').read()
-        linestring += ' '
-        words = linestring.split(' ')
-        print words
-        if keyword in words:
-            return True
-        else:
-            return False
-        resultList.append(f)
-    return resultList
-
-def clientToServer(request)
-
-
-def serverToClient(response)
-
-
-
-fileUpload('file')
-
+# client.search(user, keyword)
+print client.search(user, '5')
 
