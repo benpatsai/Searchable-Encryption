@@ -1,6 +1,8 @@
 #!/usr/bin/python
 import requests
-import cmd, os
+import cmd, os, shutil
+import time
+import json
 
 def login(s, username, password):
 
@@ -31,31 +33,52 @@ def upload(s, filename, path):
     files = {'file': (filename, open(path,'rb'))}
     s.post(url, files=files)
 
-def search(s, keyword):
+def download(s, filename, local_path):
+    url = "http://128.30.93.9:8080/zoobar/index.cgi/download"
+    payload = {"filename" : filename}
+    r = s.get(url, params=payload)
+    f = open(local_path, 'wb')
+    for chunk in r.iter_content(chunk_size=512 * 1024): 
+        if chunk: # filter out keep-alive new chunks
+            f.write(chunk)
+    f.close()
+
+def search(s, keyword, filename):
     url = "http://128.30.93.9:8080/zoobar/index.cgi/search"
-    payload = {"keyword" : keyword}
+    payload = {"keyword" : keyword, "filename": filename}
     r = s.post(url, data = payload)
-    html = r.text
-    result = html[html.rfind("<table")+35:]
-    result = result.replace("<tr>",'')
-    result = result.replace("</tr>\n",'\n')
-    result = result.replace("<th>",'')
-    result = result.replace("</th>\n",'')
-    result = result.replace("</th>",'')
-    result = result.replace('<td align="center">','')
-    result = result.replace("</td>\n",'')
-    result = result.replace("</td>",'')
-    result = result.replace("<b>",'')
-    result = result.replace("</b>",'')
-    result = result.replace("</table>",'')
-    result = result.replace("</center>",'')
-    result = result.replace("</body>",'')
-    result = result.replace("</html>",'')
-    result = result[:len(result)-15]
-
+    result = json.loads(r.text)
     print result
-   
 
+def search_in_file(path, keyword):
+    linestring = open(path, 'r').read()
+    linestring = linestring.replace('\n',' ')
+    words = linestring.split(' ')
+    if keyword in words:
+        return True
+    else: 
+        return False
+
+def local_search(s, keyword, filename):
+    if not os.path.exists('tmp'):
+        os.mkdir('tmp',0777)
+    if filename != "ALL":
+        download(s, filename, 'tmp/'+filename )
+        local_list = [filename]
+    else:
+        url = "http://128.30.93.9:8080/zoobar/index.cgi/getlist"
+        r = s.get(url)
+        file_list = json.loads(r.text)
+        for f in file_list:
+            download(s, f, 'tmp/'+f )
+        local_list = os.listdir('tmp/')
+  
+    search_results = []
+    for f in local_list:
+        if search_in_file('tmp/'+f, keyword):
+            search_results.append(f)
+    print search_results
+    
 
 class cmdlineInterface(cmd.Cmd):
     prompt = 'cryptZooBar>> '
@@ -82,14 +105,50 @@ class cmdlineInterface(cmd.Cmd):
     def do_upload(self, line):
         "upload $new_name $path"
         "Upload $path as $new_name to Zoobar, need log in first"
+        start = time.time()
         args = line.split(' ')
         upload(s, args[0], args[1])
+        end = time.time()
+        timespend = end - start
+        print "spent:" + str(timespend)
+
+    def do_download(self, line):
+        "download $remote_name $local_path"
+        "Download $remote_name in server and save as $local_path, need log in first"
+        start = time.time()
+        args = line.split(' ')
+        download(s, args[0], args[1])
+        end = time.time()
+        timespend = end - start
+        print "spent:" + str(timespend)
 
     def do_search(self, line):
         "search $keyword"
         "Get files that contain $keyword"
+        start = time.time()
         args = line.split(' ')
-        search(s, args[0])
+        if len(args) > 1:
+            search(s, args[0], args[1])
+        else:
+            search(s, args[0], 'ALL')
+
+        end = time.time()
+        timespend = end - start
+        print "spent:" + str(timespend)
+
+    def do_local_search(self, line):
+        "search $keyword"
+        "Get files that contain $keyword"
+        start = time.time()
+        args = line.split(' ')
+        if len(args) > 1:
+            local_search(s, args[0], args[1])
+        else:
+            local_search(s, args[0], 'ALL')
+        end = time.time()
+        timespend = end - start
+        print "spent:" + str(timespend)
+
 
     def do_EOF(self, line):
         print ""
