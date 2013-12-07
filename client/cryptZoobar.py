@@ -75,7 +75,7 @@ def RSA_key_gen():
     key = RSA.generate(2048)
     return [key.n,key.e,key.d,key.p,key.q,key.u]
 
-def upload_profile(username, profile):
+def upload_profile(s, username, profile):
     iv = profile['iv']
     cipher = AES.new(Mkey.hexdigest(), AES.MODE_CFB, iv)
     enc_profile = iv + cipher.encrypt(json.dumps(unicode(profile)))
@@ -87,7 +87,7 @@ def upload_profile(username, profile):
     files = {'file': (username+'profile', open(username+'profile','rb'))}
     s.post(url, files=files)
 
-def download_profile(username, profile):
+def download_profile(s, username, profile):
     iv = profile['iv']
     cipher = AES.new(Mkey.hexdigest(), AES.MODE_CFB, iv)
     url = "http://128.30.93.9:8080/zoobar/index.cgi/download"
@@ -141,7 +141,7 @@ def register(s, profile, username, password, MkeyPW):
         iv = Mkey.hexdigest()[:AES.block_size]
         profile['iv'] = iv
         Mkey.update(MkeyPW)
-        upload_profile(username, profile)
+        upload_profile(s, username, profile)
 
         s.get("http://128.30.93.9:8080/zoobar/index.cgi/registerPkey", params=pkey)
         return True
@@ -153,12 +153,11 @@ def upload(s, filename, path):
     files = {'file': (filename, open(path,'rb'))}
     s.post(url, files=files)
 
-def enc_upload(s, profile, filename, path):
+def enc_upload(s, profile, ID, filename, path):
     f = open(path,'r').read()
     salt = Random.new().read(AES.block_size) 
     key_index = Random.new().read(AES.block_size) 
     key_blocks = Random.new().read(AES.block_size) 
-
     profile[filename] = {'salt':salt, 'key_index':key_index, 'key_blocks':key_blocks} 
     hashed = hash_substrings(f, salt, key_index)
     h = open(filename+'hash', 'w')
@@ -174,7 +173,7 @@ def enc_upload(s, profile, filename, path):
     s.post(url, files=files)
 
     print profile
-    upload_profile(ID, profile)
+    upload_profile(s, ID, profile)
 
 
 def download(s, filename, local_path):
@@ -232,18 +231,21 @@ def local_search(s, keyword, filename):
 
 class cmdlineInterface(cmd.Cmd):
     prompt = 'cryptZooBar>> '
+    s = requests.session()
+    ID = ''
+    profile = {}
 
     def do_login(self, line):
         "login $username $password $Mkeypassword"
         "Log into Zoobar as $username"
         args = line.split(' ')
-        login(s, profile, args[0], args[1], args[2])
+        login(self.s, self.profile, args[0], args[1], args[2])
 
     def do_register(self, line):
         "register $username $password $Mkeypassword"
         "Register in Zoobar as $username"
         args = line.split(' ')
-        register(s, profile, args[0], args[1], args[2])
+        register(self.s, self.profile, args[0], args[1], args[2])
 
     def do_shell(self, line):
         "Run a shell command"
@@ -257,7 +259,7 @@ class cmdlineInterface(cmd.Cmd):
         "Upload $path as $new_name to Zoobar, need log in first"
         start = time.time()
         args = line.split(' ')
-        upload(s, args[0], args[1])
+        upload(self.s, args[0], args[1])
         end = time.time()
         timespend = end - start
         print "spent:" + str(timespend)
@@ -267,7 +269,7 @@ class cmdlineInterface(cmd.Cmd):
         "Upload encrypted $path as $new_name to Zoobar, need log in first"
         start = time.time()
         args = line.split(' ')
-        enc_upload(s, profile, args[0], args[1])
+        enc_upload(self.s, self.profile, self.ID, args[0], args[1])
         end = time.time()
         timespend = end - start
         print "spent:" + str(timespend)
@@ -277,7 +279,7 @@ class cmdlineInterface(cmd.Cmd):
         "Download $remote_name in server and save as $local_path, need log in first"
         start = time.time()
         args = line.split(' ')
-        download(s, args[0], args[1])
+        download(self.s, args[0], args[1])
         end = time.time()
         timespend = end - start
         print "spent:" + str(timespend)
@@ -288,9 +290,9 @@ class cmdlineInterface(cmd.Cmd):
         start = time.time()
         args = line.split(' ')
         if len(args) > 1:
-            search(s, args[0], args[1])
+            search(self.s, args[0], args[1])
         else:
-            search(s, args[0], 'ALL')
+            search(self.s, args[0], 'ALL')
 
         end = time.time()
         timespend = end - start
@@ -302,9 +304,9 @@ class cmdlineInterface(cmd.Cmd):
         start = time.time()
         args = line.split(' ')
         if len(args) > 1:
-            enc_search(s, profile, args[0], args[1])
+            enc_search(self.s, self.profile, args[0], args[1])
         else:
-            enc_search(s, profile, args[0], 'ALL')
+            enc_search(self.s, self.profile, args[0], 'ALL')
 
         end = time.time()
         timespend = end - start
@@ -317,26 +319,24 @@ class cmdlineInterface(cmd.Cmd):
         start = time.time()
         args = line.split(' ')
         if len(args) > 1:
-            local_search(s, args[0], args[1])
+            local_search(self.s, args[0], args[1])
         else:
-            local_search(s, args[0], 'ALL')
+            local_search(self.s, args[0], 'ALL')
         end = time.time()
         timespend = end - start
         print "spent:" + str(timespend)
 
     def do_logout(self, line):
-        s = requests.session()
+        self.s = requests.session()
         Mkey = MD5.new()
-        profile = {}
+        self.profile = {}
 
     def do_EOF(self, line):
         print ""
         return True 
 
 if __name__ == '__main__':
-    s = requests.session()
-    ID = ''
     Mkey = MD5.new()
-    profile = {}
     loggedIn = False
-    cmdlineInterface().cmdloop()
+    c = cmdlineInterface()
+    c.cmdloop()
