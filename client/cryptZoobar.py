@@ -13,6 +13,8 @@ from Crypto import Random
 block_length = 3
 s = requests.session()
 ID = ''
+PW = ''
+MPW = ''
 profile = {}
 
 def search_hash(hashed_query, filename):
@@ -96,12 +98,18 @@ def RSA_key_gen():
     return [key.n,key.e,key.d,key.p,key.q,key.u]
 
 def upload_profile(username):
-    global s, profile, ID
-
-    iv = profile['iv']
+    global s, profile, ID, MPW, PW
+    Mkey=MD5.new()
+    Mkey.update(MPW+'iv')
+    iv = Mkey.hexdigest()[:AES.block_size]
+    Mkey=MD5.new()
+    Mkey.update(PW)
     cipher = AES.new(Mkey.hexdigest(), AES.MODE_CFB, iv)
-    enc_profile = iv + cipher.encrypt(json.dumps(profile, encoding='latin1'))
-
+    #print profile
+    enc_profile = iv + cipher.encrypt(json.dumps(profile))
+    iv_size = AES.block_size
+    dec_profile = cipher.decrypt(enc_profile)[iv_size:]
+    #print dec_profile
     f = open(username+'profile','w')
     f.write(enc_profile)
     f.close()
@@ -110,8 +118,12 @@ def upload_profile(username):
     s.post(url, files=files)
 
 def download_profile(username):
-    global s, profile, ID
-    iv = profile['iv']
+    global s, profile, ID, MPW, PW
+    Mkey=MD5.new()
+    Mkey.update(MPW+'iv')
+    iv = Mkey.hexdigest()[:AES.block_size]
+    Mkey=MD5.new()
+    Mkey.update(PW)
     cipher = AES.new(Mkey.hexdigest(), AES.MODE_CFB, iv)
     url = "http://128.30.93.9:8080/zoobar/index.cgi/download"
     payload = {"filename" : username+'profile'}
@@ -124,11 +136,12 @@ def download_profile(username):
 
     f = open(username+'profile','r').read()
     iv_size = AES.block_size
+    ptxt = cipher.decrypt(f)[iv_size:]
     profile = json.loads(cipher.decrypt(f)[iv_size:])
 
 
 def login(username, password, MkeyPW):
-    global s, profile, ID
+    global s, profile, ID, MPW
 
     payload = { "submit_login" : "1" ,
             "login_username": username ,
@@ -138,11 +151,8 @@ def login(username, password, MkeyPW):
 
     if (username in r.text):
         ID = username
-
-        Mkey.update(MkeyPW+'iv')
-        iv = Mkey.hexdigest()[:AES.block_size]
-        Mkey.update(MkeyPW)
-        profile['iv'] = iv
+        MPW = MkeyPW
+        PW = password
         download_profile(username)
         return True
     else:
@@ -159,13 +169,10 @@ def register(username, password, MkeyPW):
 
     if (username in r.text):
         ID = username
-
+        MPW = MkeyPW
+        PW = password
         pkey = {"n": n, "e": e}
-        profile = {"d": d, "p": p, "q": q, "u":u}
-        Mkey.update(MkeyPW+'iv')
-        iv = Mkey.hexdigest()[:AES.block_size]
-        profile['iv'] = iv
-        Mkey.update(MkeyPW)
+        profile = {"d": str(d), "p": str(p), "q": str(q), "u":str(u)}
         upload_profile(username)
 
         s.get("http://128.30.93.9:8080/zoobar/index.cgi/registerPkey", params=pkey)
@@ -184,9 +191,13 @@ def enc_upload(filename, path):
     global s, profile, ID
 
     f = open(path,'r').read()
-    salt = Random.new().read(AES.block_size)
-    key_index = Random.new().read(AES.block_size)
-    key_blocks = Random.new().read(AES.block_size)
+    #salt = Random.new().read(AES.block_size)
+    salt = [ord(x) for x in Random.new().read(AES.block_size)]
+    #key_index = Random.new().read(AES.block_size)
+    key_index = [ord(x) for x in Random.new().read(AES.block_size)]
+    key_index = [ord(x) for x in Random.new().read(AES.block_size)]
+
+    #key_blocks = Random.new().read(AES.block_size)
     profile[filename] = {'salt':salt, 'key_index':key_index, 'key_blocks':key_blocks}
     hashed = hash_substrings(f, salt, key_index)
     h = open(filename+'hash', 'w')
