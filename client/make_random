@@ -1,0 +1,13 @@
+#!/usr/bin/env python
+import random
+import sys
+import string
+size = int(sys.argv[1])
+def random_str(length):
+  alpha = 'abcdefghijklmnopqrstuvwxyz'
+  id = ''
+  for i in range(0,length):
+    id += random.choice(alpha)
+  return id
+sys.stdout.write(random_str(size))
+
