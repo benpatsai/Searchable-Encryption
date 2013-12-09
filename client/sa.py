@@ -5,9 +5,17 @@ import hashlib
 import pickle
 import copy
 import search_tools
+import json
+from Crypto.Cipher import PKCS1_OAEP
+from Crypto.PublicKey import RSA
+from Crypto.Hash import MD5
+from Crypto.Cipher import AES
+from Crypto import Random
+
+
 
 #server
-
+'''
 block_length=3
 
 hashes_server=[]
@@ -17,18 +25,20 @@ def send_hashes(hashes):
     hashes_server=hashes
     return 
 '''
+'''
 def search_hash(hashed_query):
     for (hashed_substr,enc_index) in hashes_server:
         if (hashed_query==hashed_substr):
             return enc_index
     return -1
 '''
-server_encrypted_blocks=[]
-
+#server_encrypted_blocks=[]
+'''
 def send_encrypted_blocks(encrypted_blocks):
     global server_encrypted_blocks
     server_encrypted_blocks=encrypted_blocks
     return
+'''
 '''
 def get_encrypted_blocks(start_block_index,end_block_index):
     return server_encrypted_blocks[start_block_index:end_block_index+1]
@@ -44,30 +54,41 @@ def random_str(length):
         id += random.choice(alpha)
     return id
 
-salt=random_str(5)
+#salt=random_str(5)
 
 #text='It will be seen that this mere painstaking burrower and grub-worm of a poor devil of a Sub-Sub appea'
 #text='banana'
-text='01234567890'
+#text='01234567890'
 
-key_index='????'
+#key_index='????'
 
 def next_greater_power_of_2(x):  
     return 2**(x).bit_length()
 
-def encrypt_integer(integer,key):
-    enc_integer=integer
+def encrypt_integer(integer,block_index_iv,key_index):
+    s=str(integer)
+    enc_integer=encrypt_block(s,0,block_index_iv,key_index)
     return enc_integer
 
-def decrypt_integer(enc_integer,key):
-    integer=enc_integer
+def decrypt_integer(enc_integer,block_index_iv,key_index):
+    s=decrypt_block(enc_integer,0,block_index_iv,key_index)
+    integer=int(s)
     return integer
+
+def list_to_str(l):
+    return ''.join(str(e) for e in l)
 
 def hash_with_salt(string,salt):
     #return hashlib.md5(salt+str)
-    return string
+    #return string
+    #print str(salt)
+    ssalt=list_to_str(salt)
+    #print ssalt
+    hash_object=hashlib.sha1(ssalt+string)
+    return hash_object.hexdigest()
+    #return string
 
-def hash_substrings_o2(text,salt,key_index):
+def hash_substrings_o2(text,salt,block_index_iv,key_index):
     sufar = search_tools.construct_suffix_array(text)
     n = len(sufar)
     hashes=[]
@@ -84,20 +105,20 @@ def hash_substrings_o2(text,salt,key_index):
             for j in range(shared[i-1]+1,shared[i]+1):
                 substr = text[sufar[i]:sufar[i]+j]
                 #print "type 1 substr %s"%substr
-                hashes.append((hash_with_salt(substr,salt),encrypt_integer(sufar[i-1],key_index)))
+                hashes.append((hash_with_salt(substr,salt),encrypt_integer(sufar[i-1],block_index_iv,key_index)))
         if i < n-1 and  sufar[i] + shared[i] + 1 <= n and sufar[i]+shared[i+1]+1 <= n:
             substr = text[sufar[i]:sufar[i]+max(shared[i],shared[i+1])+1]
             #print "type 2 substr %s"%substr
-            hashes.append((hash_with_salt(substr,salt),encrypt_integer(sufar[i],key_index)))
+            hashes.append((hash_with_salt(substr,salt),encrypt_integer(sufar[i],block_index_iv,key_index)))
 
     #Don't forget to include the shortest unique substring starting at text[suff_arr[0]]
     #and also starting at text[sufar[n-1]
     if sufar[0]+shared[1] + 1 <= n:
-        hashes.append((hash_with_salt(text[sufar[0]:sufar[0]+shared[1]+1],salt),encrypt_integer(sufar[0],key_index)))
+        hashes.append((hash_with_salt(text[sufar[0]:sufar[0]+shared[1]+1],salt),encrypt_integer(sufar[0],block_index_iv,key_index)))
     if sufar[n-1]+shared[n-1]+1<=n:
-        hashes.append((hash_with_salt(text[sufar[n-1]:sufar[n-1]+shared[n-1]+1],salt),encrypt_integer(sufar[n-1],key_index)))
+        hashes.append((hash_with_salt(text[sufar[n-1]:sufar[n-1]+shared[n-1]+1],salt),encrypt_integer(sufar[n-1],block_index_iv,key_index)))
 
-    hashes.append((hash_with_salt("",salt),encrypt_integer(0,key_index)))
+    hashes.append((hash_with_salt("",salt),encrypt_integer(0,block_index_iv,key_index)))
     #Also sort the array to avoid leaking information about the order
     hashes.sort()
     
@@ -127,8 +148,8 @@ def hash_substrings_optimized(text,salt,key_index):
         hashed_prefixes[index]%=modulo
     #print hashed_prefixes
 
-def hash_substrings(text,salt,key_index):
-    return hash_substrings_o2(text,salt,key_index)
+def hash_substrings(text,salt,block_index_iv,key_index):
+    return hash_substrings_o2(text,salt,block_index_iv,key_index)
     '''all_substr=[]
     textLength=len(text)
     for i in range(0,textLength+1):
@@ -155,11 +176,11 @@ def hash_substrings(text,salt,key_index):
     return hashes
 '''
 
-hashes_client=hash_substrings(text,salt,key_index)
+#hashes_client=hash_substrings(text,salt,key_index)
 
-send_hashes(hashes_client)
+#send_hashes(hashes_client)
 
-key_blocks='????'
+#key_blocks='????'
 
 def splitString(string, block_length):
     blocks=[]
@@ -168,24 +189,54 @@ def splitString(string, block_length):
         string=string[block_length:]
     return blocks
 
-def encrypt_block(block,key_blocks):
-    encrypted_block=block
-    return encrypted_block
+def encrypt_block(block,block_id,block_index_iv,key_blocks):
+    Mkey=MD5.new()
+    Mkey.update(block_index_iv+str(block_id))
+    iv = Mkey.hexdigest()[:AES.block_size]
+    Mkey=MD5.new()
+    Mkey.update(list_to_str(key_blocks))
+    cipher = AES.new(Mkey.hexdigest(), AES.MODE_CFB, iv)
+    #print profile
+    encrypted_block = cipher.encrypt(block)
+    encrypted_block_ints=[ord(x) for x in encrypted_block]
+    #print 'encrypt: ',block,'->',encrypted_block_ints
+    #iv_size = AES.block_size
+    #dec_profile = cipher.decrypt(enc_profile)[iv_size:]
+    #print dec_profile
 
-def decrypt_block(encrypted_block,key_blocks):
-    block=encrypted_block
+    #encrypted_block=block
+    #return encrypted_block_ints
+    return encrypted_block_ints
+
+def decrypt_block(encrypted_block,block_id,block_index_iv,key_blocks):
+    encrypted_block_str=''.join([chr(x) for x in encrypted_block])
+    Mkey=MD5.new()
+    Mkey.update(block_index_iv+str(block_id))
+    iv = Mkey.hexdigest()[:AES.block_size]
+    Mkey=MD5.new()
+    Mkey.update(list_to_str(key_blocks))
+    #print profile
+    #encrypted_block = iv + cipher.encrypt(block)
+    #print block,'->',encrypted_block
+    #iv_size = AES.block_size
+    cipher = AES.new(Mkey.hexdigest(), AES.MODE_CFB, iv)
+    block = cipher.decrypt(encrypted_block_str)
+    #print 'decrypt: ',encrypted_block,'->',block
+    #print dec_profile
+    #block=encrypted_block
     return block
 
-def encrypt_blocks(text,key_blocks,block_length):
+def encrypt_blocks(text,key_blocks,block_index_iv,block_length):
     blocks=splitString(text,block_length)
     encrypted_blocks=[]
-    for block in blocks:
-        encrypted_blocks.append(encrypt_block(block,key_blocks))
+    for (block_id,block) in enumerate(blocks):
+        encrypted_blocks.append(encrypt_block(block,block_id,block_index_iv,key_blocks))
+    #encrypt_block('asdlfkjsadsdfksdfjsdfsdflkj',0,'asdf',[12,2,3])
     return encrypted_blocks
 
-encrypted_blocks=encrypt_blocks(text,key_blocks,block_length)
+#encrypted_blocks=encrypt_blocks(text,key_blocks,block_length)
 
-send_encrypted_blocks(encrypted_blocks)
+#send_encrypted_blocks(encrypted_blocks)
 '''
 def search_substring(query,salt,key_index,block_length):
 

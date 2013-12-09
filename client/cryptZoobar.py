@@ -10,12 +10,14 @@ from Crypto.Hash import MD5
 from Crypto.Cipher import AES
 from Crypto import Random
 
-block_length = 3
+block_length = 100
 s = requests.session()
 ID = ''
 PW = ''
 MPW = ''
 profile = {}
+#salt=random_str(10)
+#print salt
 
 def search_hash(hashed_query, filename):
     global s, profile, ID
@@ -23,7 +25,7 @@ def search_hash(hashed_query, filename):
     url = "http://128.30.93.9:8080/zoobar/index.cgi/enc_search"
     payload = {"keyword" : hashed_query, "filename": filename}
     r = s.post(url, data = payload)
-    print r.text
+    #print r.text
     result = json.loads(r.text)
     return result['idx']
 
@@ -33,7 +35,7 @@ def get_encrypted_blocks(filename, start, end):
     url = "http://128.30.93.9:8080/zoobar/index.cgi/get_enc_block"
     payload = {"start" : start, "end":end, "filename": filename}
     r = s.post(url, data = payload)
-    print r.text
+    #print r.text
     result = json.loads(r.text)
     return result['enc_block']
     #f = open(filename+'block').read()
@@ -41,14 +43,14 @@ def get_encrypted_blocks(filename, start, end):
     #return enc_block[start:end+1]
 
 
-def search_substring(query,salt,key_index,block_length, filename):
+def search_substring(query,salt,key_index,block_length,block_index_iv,key_blocks, filename):
     global s, profile, ID
   
     enc_index=search_hash(hash_with_salt(query,salt), filename)
 
-    print enc_index
+    #print enc_index
     if enc_index!=-1:
-        return decrypt_integer(enc_index,key_index)
+        return decrypt_integer(enc_index,block_index_iv,key_index)
     prefix_len=len(query)
     delta=next_greater_power_of_2(prefix_len)/2
 
@@ -70,7 +72,7 @@ def search_substring(query,salt,key_index,block_length, filename):
         #input("!")
     #print enc_shorter_index
 
-    index=decrypt_integer(enc_shorter_index,key_index)
+    index=decrypt_integer(enc_shorter_index,block_index_iv,key_index)
     #print index
     start_index=index
     end_index=start_index+len(query)
@@ -81,8 +83,9 @@ def search_substring(query,salt,key_index,block_length, filename):
 
     encrypted_blocks=get_encrypted_blocks(filename, start_block_index,end_block_index)
     decrypted_string=''
-    for encrypted_block in encrypted_blocks:
-        decrypted_string+=decrypt_block(encrypted_block,key_blocks)
+    for (index1,encrypted_block) in enumerate(encrypted_blocks):
+        block_id=start_block_index+index1
+        decrypted_string+=decrypt_block(encrypted_block,block_id,block_index_iv,key_blocks)
     #print decrypted_string
     check_start_index=start_index-start_block_index*block_length
     check_end_index=check_start_index+len(query)
@@ -137,7 +140,9 @@ def download_profile(username):
     f = open(username+'profile','r').read()
     iv_size = AES.block_size
     ptxt = cipher.decrypt(f)[iv_size:]
-    profile = json.loads(cipher.decrypt(f)[iv_size:])
+    dec = cipher.decrypt(f)[iv_size:]
+    #print dec
+    profile = json.loads(dec)
 
 
 def login(username, password, MkeyPW):
@@ -195,19 +200,22 @@ def enc_upload(filename, path):
     salt = [ord(x) for x in Random.new().read(AES.block_size)]
     #key_index = Random.new().read(AES.block_size)
     key_index = [ord(x) for x in Random.new().read(AES.block_size)]
-    key_index = [ord(x) for x in Random.new().read(AES.block_size)]
+    key_blocks = [ord(x) for x in Random.new().read(AES.block_size)]
+
+    block_index_iv=random_str(15)
 
     #key_blocks = Random.new().read(AES.block_size)
-    profile[filename] = {'salt':salt, 'key_index':key_index, 'key_blocks':key_blocks}
-    hashed = hash_substrings(f, salt, key_index)
+    profile[filename] = {'salt':salt, 'key_index':key_index, 'key_blocks':key_blocks, 'block_index_iv':block_index_iv}
+    hashed = hash_substrings(f, salt,block_index_iv, key_index)
     h = open(filename+'hash', 'w')
     h.write(json.dumps(hashed))
+    #h.write(hashed)
     h.close()
     url = "http://128.30.93.9:8080/zoobar/index.cgi/enc_upload"
     files = {'file': (filename+'hash', open(filename+'hash','rb'))}
     s.post(url, files=files)
 
-    encrypted_blocks = encrypt_blocks(f,key_blocks,block_length)
+    encrypted_blocks = encrypt_blocks(f,key_blocks,block_index_iv,block_length)
     b = open(filename+'block','w')
     b.write(json.dumps(encrypted_blocks))
     b.close()
@@ -244,7 +252,9 @@ def enc_search(keyword, filename):
     file_profile = profile[filename]
     salt = file_profile['salt']
     key_index = file_profile['key_index']
-    print search_substring(keyword, salt, key_index, block_length, filename)
+    key_blocks= file_profile['key_blocks']
+    block_index_iv=file_profile['block_index_iv']
+    print search_substring(keyword, salt, key_index, block_length,block_index_iv,key_blocks, filename)
 
 
 def search_in_file(path, keyword):
@@ -388,4 +398,6 @@ if __name__ == '__main__':
     Mkey = MD5.new()
     loggedIn = False
     c = cmdlineInterface()
+#    salt=random_str(10)
+    #print salt
     c.cmdloop()
