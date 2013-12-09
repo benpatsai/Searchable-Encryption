@@ -85,7 +85,8 @@ def hash_with_salt(string,salt):
     ssalt=list_to_str(salt)
     #print ssalt
     hash_object=hashlib.sha1(ssalt+string)
-    return hash_object.hexdigest()
+    s=hash_object.hexdigest()
+    return s[:5]
     #return string
 
 def hash_substrings_o2(text,salt,block_index_iv,key_index):
