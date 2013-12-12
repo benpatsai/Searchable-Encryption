@@ -4,6 +4,7 @@ import cmd, os, shutil
 import time
 import json
 from sa import*
+import search_tools as st
 from Crypto.Cipher import PKCS1_OAEP
 from Crypto.PublicKey import RSA
 from Crypto.Hash import MD5
@@ -16,13 +17,14 @@ ID = ''
 PW = ''
 MPW = ''
 profile = {}
+website = "http://128.30.93.9:8080/zoobar/index.cgi/"
 #salt=random_str(10)
 #print salt
 
 def search_hash(hashed_query, filename):
     global s, profile, ID
 
-    url = "http://128.30.93.9:8080/zoobar/index.cgi/enc_search"
+    url = website+"enc_search"
     payload = {"keyword" : hashed_query, "filename": filename}
     r = s.post(url, data = payload)
     #print r.text
@@ -32,7 +34,7 @@ def search_hash(hashed_query, filename):
 def get_encrypted_blocks(filename, start, end):
     global s, profile, ID
 
-    url = "http://128.30.93.9:8080/zoobar/index.cgi/get_enc_block"
+    url = website+"get_enc_block"
     payload = {"start" : start, "end":end, "filename": filename}
     r = s.post(url, data = payload)
     #print r.text
@@ -116,9 +118,16 @@ def upload_profile(username):
     f = open(username+'profile','w')
     f.write(enc_profile)
     f.close()
-    url = "http://128.30.93.9:8080/zoobar/index.cgi/upload"
+    url = website+"upload"
     files = {'file': (username+'profile', open(username+'profile','rb'))}
     s.post(url, files=files)
+
+    f = open('msg','w')
+    f.write("")
+    url = website+"upload"
+    files = {'file': ('msg', open('msg','rb'))}
+    s.post(url, files=files)
+
 
 def download_profile(username):
     global s, profile, ID, MPW, PW
@@ -128,7 +137,7 @@ def download_profile(username):
     Mkey=MD5.new()
     Mkey.update(PW)
     cipher = AES.new(Mkey.hexdigest(), AES.MODE_CFB, iv)
-    url = "http://128.30.93.9:8080/zoobar/index.cgi/download"
+    url = website+"download"
     payload = {"filename" : username+'profile'}
     r = s.get(url, params=payload)
     f = open(username+'profile', 'wb')
@@ -144,6 +153,38 @@ def download_profile(username):
     #print dec
     profile = json.loads(dec)
 
+    url = website+"download"
+    payload = {"filename" : 'msg'}
+    r = s.get(url, params=payload)
+    f = open('msg', 'wb')
+    for chunk in r.iter_content(chunk_size=512 * 1024):
+        if chunk: # filter out keep-alive new chunks
+            f.write(chunk)
+    f.close()
+
+    [n, e, d, p, q, u] = [profile['n'],profile['e'],profile['d'],profile['p'],profile['q'],profile['u'],]
+    key = RSA.construct([long(n),long(e),long(d),long(p),long(q),long(u)])
+    cipher = PKCS1_OAEP.new(key)
+
+
+    f = open('msg')
+    lines = f.readlines()
+    f.close()
+    i = 0
+    while i+1 < len(lines):
+        addfile = lines[i]
+        c1 = ''.join(chr(e) for e in (json.loads(lines[i+1])))
+        c2 = ''.join(chr(e) for e in (json.loads(lines[i+2])))
+        msg1 = cipher.decrypt(c1)
+        msg2 = cipher.decrypt(c2)
+        file_profile = json.loads(msg1+msg2)
+        print addfile[:-1]
+        print file_profile
+        
+        profile[addfile[:-1]] = file_profile
+        i = i+3
+
+
 
 def login(username, password, MkeyPW):
     global s, profile, ID, MPW
@@ -152,7 +193,7 @@ def login(username, password, MkeyPW):
             "login_username": username ,
             "login_password": password }
 
-    r = s.post("http://128.30.93.9:8080/zoobar/index.cgi/login", data=payload)
+    r = s.post(website+"login", data=payload)
 
     if (username in r.text):
         ID = username
@@ -170,17 +211,16 @@ def register(username, password, MkeyPW):
             "login_username": username ,
             "login_password": password }
 
-    r = s.post("http://128.30.93.9:8080/zoobar/index.cgi/login", data=payload)
+    r = s.post(website+"login", data=payload)
 
     if (username in r.text):
         ID = username
         MPW = MkeyPW
         PW = password
         pkey = {"n": n, "e": e}
-        profile = {"d": str(d), "p": str(p), "q": str(q), "u":str(u)}
+        profile = {"n": str(n), "e": str(e), "d": str(d), "p": str(p), "q": str(q), "u":str(u)}
         upload_profile(username)
-
-        s.get("http://128.30.93.9:8080/zoobar/index.cgi/registerPkey", params=pkey)
+        s.post(website+"registerPkey", data=pkey)
         return True
     else:
         return False
@@ -188,7 +228,7 @@ def register(username, password, MkeyPW):
 def upload(filename, path):
     global s, profile, ID
 
-    url = "http://128.30.93.9:8080/zoobar/index.cgi/upload"
+    url = website+"upload"
     files = {'file': (filename, open(path,'rb'))}
     s.post(url, files=files)
 
@@ -206,21 +246,44 @@ def enc_upload(filename, path):
 
     #key_blocks = Random.new().read(AES.block_size)
     profile[filename] = {'salt':salt, 'key_index':key_index, 'key_blocks':key_blocks, 'block_index_iv':block_index_iv}
-    hashed = hash_substrings(f, salt,block_index_iv, key_index)
+    hashed = hash_substrings(f, salt,block_index_iv, key_index, path)
     h = open(filename+'hash', 'w')
     h.write(json.dumps(hashed))
     #h.write(hashed)
     h.close()
-    url = "http://128.30.93.9:8080/zoobar/index.cgi/enc_upload"
+    url = website+"enc_upload"
     files = {'file': (filename+'hash', open(filename+'hash','rb'))}
     s.post(url, files=files)
-
+    print "done:hash upload"
     encrypted_blocks = encrypt_blocks(f,key_blocks,block_index_iv,block_length)
+    print "done:enc block"
     b = open(filename+'block','w')
     b.write(json.dumps(encrypted_blocks))
     b.close()
-    url = "http://128.30.93.9:8080/zoobar/index.cgi/enc_upload"
+    url = website+"enc_upload"
     files = {'file': (filename+'block', open(filename+'block','rb'))}
+    s.post(url, files=files)
+    print "done:enc_block upload"
+    upload_profile(ID)
+
+def bin_upload(filename, path):
+    global s, profile, ID
+
+    f = open(path,'r').read()
+    ### encrypt file ###
+    suf = st.construct_suf_lcp(path)
+    tree = st.construct_suffix_tree(path)
+    arr = st.tree_to_array(tree)
+    aux_data = json.dumps({"bin_search_tree":arr});
+    b = open(filename+'bin','w')
+    b.write(aux_data)
+    b.close()
+
+    url = website+"bin_upload"
+    files = {'file': (filename+'bin', open(filename+'bin','rb'))}
+    s.post(url, files=files)
+
+    files = {'file': (filename, open(path,'rb'))}
     s.post(url, files=files)
 
     upload_profile(ID)
@@ -229,7 +292,7 @@ def enc_upload(filename, path):
 def download(filename, local_path):
     global s, profile, ID
 
-    url = "http://128.30.93.9:8080/zoobar/index.cgi/download"
+    url = website+"download"
     payload = {"filename" : filename}
     r = s.get(url, params=payload)
     f = open(local_path, 'wb')
@@ -241,7 +304,7 @@ def download(filename, local_path):
 def search(keyword, filename):
     global s, profile, ID
 
-    url = "http://128.30.93.9:8080/zoobar/index.cgi/search"
+    url = website+"search"
     payload = {"keyword" : keyword, "filename": filename}
     r = s.post(url, data = payload)
     result = json.loads(r.text)
@@ -255,6 +318,103 @@ def enc_search(keyword, filename):
     key_blocks= file_profile['key_blocks']
     block_index_iv=file_profile['block_index_iv']
     print search_substring(keyword, salt, key_index, block_length,block_index_iv,key_blocks, filename)
+
+def bin_search(keyword, filename):
+    global s, profile, ID
+    results = []
+    kw_len = len(keyword)
+    url = website+"bin_init"
+    payload = {"filename" : filename, "keyword":keyword}
+    r = s.post(url, data=payload)
+    resp = json.loads(r.text)
+    key = 1
+    found = 0
+    if resp is not None:
+        (cur_dat, c_off, left_dat, l_off, right_dat, r_off) = resp
+        last_iter = False
+        decrypted_cur = st.decrypt_blocks(cur_dat, key, 1)
+        decrypted_left = st.decrypt_blocks(left_dat, key, 1)
+        decrypted_right = st.decrypt_blocks(right_dat, key, 1)
+
+        decrypted_cur = st.align_text(decrypted_cur, c_off, kw_len)
+        decrypted_left = st.align_text(decrypted_left, l_off, kw_len)
+        decrypted_right = st.align_text(decrypted_right, r_off, kw_len)
+
+        if decrypted_cur is None or \
+            decrypted_left is None or \
+            decrypted_right is None:
+            last_iter = True
+
+        if decrypted_cur == keyword or \
+            decrypted_left == keyword or \
+            decrypted_right == keyword:
+            found = 1
+        else:
+            if decrypted_cur < keyword:
+                if decrypted_left > decrypted_cur:
+                    choice = st.LEFT
+                    prev_block = decrypted_left
+                else:
+                    choice = st.RIGHT
+                    prev_block = decrypted_right
+            else: # decrypted_cur > keyword
+                if decrypted_left < decrypted_cur:
+                    choice = st.LEFT
+                    prev_block = decrypted_left
+                else:
+                    choice = st.RIGHT
+                    prev_block = decrypted_right
+            url = website+"bin_search"
+            payload = {"filename" : filename, "keyword":keyword, "choice":str(choice)}
+            r = s.post(url, data=payload)
+            content = r.content.split("\n")
+            resp = json.loads(content[-1])["result"]
+            while resp is not None:
+                (left_dat, l_off, right_dat, r_off) = resp
+                #print l_off, r_off
+                last_iter = False
+                decrypted_left = st.decrypt_blocks(left_dat, key, 1)
+                decrypted_right = st.decrypt_blocks(right_dat, key, 1)
+
+                decrypted_left = st.align_text(decrypted_left,l_off,kw_len)
+                decrypted_right=st.align_text(decrypted_right,r_off,kw_len)
+
+                if decrypted_left is None or decrypted_right is None:
+                    last_iter = True
+
+                if decrypted_left == keyword or \
+                    decrypted_right == keyword:
+                    found = 1
+                    break
+                elif last_iter:
+                    break
+                else:
+                    if prev_block < keyword:
+                        if decrypted_left > prev_block:
+                            choice = st.LEFT
+                            prev_block = decrypted_left
+                        else:
+                            choice = st.RIGHT
+                            prev_block = decrypted_right
+                    else: # prev_block > keyword
+                        if decrypted_left < prev_block:
+                            choice = st.LEFT
+                            prev_block = decrypted_left
+                        else:
+                            choice = st.RIGHT
+                            prev_block = decrypted_right
+                url = website+"bin_search"
+                payload = {"filename" : filename, "keyword":keyword, 'choice':choice}
+                r = s.post(url, data=payload)
+                content = r.content.split("\n")
+                resp = json.loads(content[-1])["result"]
+
+    if(found == 1):
+        print "Found"
+    else:
+        print "Not Found"
+
+
 
 
 def search_in_file(path, keyword):
@@ -277,7 +437,7 @@ def local_search( keyword, filename):
         download(s, filename, 'tmp/'+filename )
         local_list = [filename]
     else:
-        url = "http://128.30.93.9:8080/zoobar/index.cgi/getlist"
+        url = website+"getlist"
         r = s.get(url)
         file_list = json.loads(r.text)
         for f in file_list:
@@ -290,6 +450,32 @@ def local_search( keyword, filename):
             search_results.append(f)
     print search_results
    
+def share(filename, user):
+    global s, profile, ID
+
+    url = website+"share"
+    file_profile = profile[filename]
+    msg = json.dumps(file_profile)
+    print msg[:150] + msg[150:]
+    payload = {"user":user}
+    r = s.get(website+"registerPkey", params=payload)
+    pkey = json.loads(r.text)
+    n = pkey['n']
+    e = pkey['e']
+    Pkey = RSA.construct([long(n),long(e)])
+    cipher = PKCS1_OAEP.new(Pkey)
+    text1 = [ord(x) for x in cipher.encrypt(msg[:150])]
+    text2 = [ord(x) for x in cipher.encrypt(msg[150:])]
+    ciphertext1 = json.dumps(text1)
+    ciphertext2 = json.dumps(text2)
+
+    print ciphertext1, ciphertext2
+    payload = {"filename" : filename, "friend": user, "msg1":ciphertext1, "msg2":ciphertext2}
+    r = s.post(url, data = payload)
+    result = r.text
+    print result
+   
+
 
 class cmdlineInterface(cmd.Cmd):
     prompt = 'cryptZooBar>> '
@@ -333,6 +519,16 @@ class cmdlineInterface(cmd.Cmd):
         timespend = end - start
         print "spent:" + str(timespend)
 
+    def do_bin_upload(self, line):
+        "bin_upload $new_name $path"
+        "Upload encrypted $path as $new_name to Zoobar for scheme2, need log in first"
+        start = time.time()
+        args = line.split(' ')
+        bin_upload( args[0], args[1])
+        end = time.time()
+        timespend = end - start
+        print "spent:" + str(timespend)
+
     def do_download(self, line):
         "download $remote_name $local_path"
         "Download $remote_name in server and save as $local_path, need log in first"
@@ -362,15 +558,30 @@ class cmdlineInterface(cmd.Cmd):
         "Get files that contain $keyword"
         start = time.time()
         args = line.split(' ')
+        keys = line.split('\"')
         if len(args) > 1:
-            enc_search(args[0], args[1])
+            enc_search(keys[1], args[-1])
         else:
-            enc_search(args[0], 'ALL')
+            enc_search(keys[1], 'ALL')
 
         end = time.time()
         timespend = end - start
         print "spent:" + str(timespend)
 
+    def do_bin_search(self, line):
+        "search $keyword ($file)"
+        "Get files that contain $keyword"
+        start = time.time()
+        args = line.split(' ')
+        keys = line.split('\"')
+        if len(args) > 1:
+            bin_search(keys[1], args[-1])
+        else:
+            bin_search(keys[1], 'ALL')
+
+        end = time.time()
+        timespend = end - start
+        print "spent:" + str(timespend)
 
     def do_local_search(self, line):
         "search $keyword"
@@ -385,14 +596,27 @@ class cmdlineInterface(cmd.Cmd):
         timespend = end - start
         print "spent:" + str(timespend)
 
+    def do_share(self, line):
+        "share $file $user"
+        "Share $file with $user"
+        args = line.split(' ')
+
+        share(args[0], args[1])
+
     def do_logout(self, line):
         self.s = requests.session()
         Mkey = MD5.new()
         self.profile = {}
 
+    def do_ls(self, line):
+        flist = get_file_list()
+        for f in flist:
+            print f
+
     def do_EOF(self, line):
         print ""
         return True
+
 
 if __name__ == '__main__':
     Mkey = MD5.new()

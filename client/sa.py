@@ -66,14 +66,20 @@ def next_greater_power_of_2(x):
     return 2**(x).bit_length()
 
 def encrypt_integer(integer,block_index_iv,key_index):
+    return integer
+    '''
     s=str(integer)
     enc_integer=encrypt_block(s,0,block_index_iv,key_index)
     return enc_integer
+    '''
 
 def decrypt_integer(enc_integer,block_index_iv,key_index):
+    return enc_integer
+    '''
     s=decrypt_block(enc_integer,0,block_index_iv,key_index)
     integer=int(s)
     return integer
+    '''
 
 def list_to_str(l):
     return ''.join(str(e) for e in l)
@@ -85,43 +91,64 @@ def hash_with_salt(string,salt):
     ssalt=list_to_str(salt)
     #print ssalt
     hash_object=hashlib.sha1(ssalt+string)
-    return hash_object.hexdigest()
+    s=hash_object.hexdigest()
+    s5=s[:8]
+    #print s5
+    return s5
     #return string
 
-def hash_substrings_o2(text,salt,block_index_iv,key_index):
-    sufar = search_tools.construct_suffix_array(text)
-    n = len(sufar)
-    hashes=[]
-    shared=[0]*n
-    for i in range(1,n):
+def hash_substrings_o2(text,salt,block_index_iv,key_index, path):
+    #sufar = search_tools.construct_suffix_array(path)
+    (sufar,lcp) = search_tools.construct_suf_lcp(path)
+    print "done: suffix array and lcp"
+    n = len(sufar) - 1 #Subtract one due to weird suffix array implementation
+    ha0list=[]#[]
+    ha1={}
+    #shared=[0]*n
+    
+    #for i in range(1,n):
         #Determine the number of characters shared between text[i:n] and text[i-1:n]
-        shared[i] = 0
-        while sufar[i] + shared[i] < n and sufar[i-1] + shared[i] < n and text[sufar[i]+shared[i]]==text[sufar[i-1]+shared[i]]:
-            shared[i]+=1
+    #    shared[i] = 0
+    #    while sufar[i] + shared[i] < n and sufar[i-1] + shared[i] < n and text[sufar[i]+shared[i]]==text[sufar[i-1]+shared[i]]:
+    #        shared[i]+=1
     #print sufar
     #print shared
+    #for i in range(n):
+    #    print "%d <-> %d" % (shared[i], lcp[i])
     for i in range(1,n):
-        if shared[i] > shared[i-1]:
-            for j in range(shared[i-1]+1,shared[i]+1):
+        if lcp[i] > lcp[i-1]:
+            for j in range(lcp[i-1]+1,lcp[i]+1):
                 substr = text[sufar[i]:sufar[i]+j]
                 #print "type 1 substr %s"%substr
-                hashes.append((hash_with_salt(substr,salt),encrypt_integer(sufar[i-1],block_index_iv,key_index)))
-        if i < n-1 and  sufar[i] + shared[i] + 1 <= n and sufar[i]+shared[i+1]+1 <= n:
-            substr = text[sufar[i]:sufar[i]+max(shared[i],shared[i+1])+1]
+                #hashes.append((hash_with_salt(substr,salt),encrypt_integer(sufar[i-1],block_index_iv,key_index)))
+                #Appears multiple times
+                ha0list.append(hash_with_salt(substr,salt)) 
+
+        if i < n-1 and  sufar[i] + lcp[i] + 1 <= n and sufar[i]+lcp[i+1]+1 <= n:
+            substr = text[sufar[i]:sufar[i]+max(lcp[i],lcp[i+1])+1]
             #print "type 2 substr %s"%substr
-            hashes.append((hash_with_salt(substr,salt),encrypt_integer(sufar[i],block_index_iv,key_index)))
+            #appears once
+            ha1[hash_with_salt(substr,salt)] = encrypt_integer(sufar[i],block_index_iv,key_index)
 
     #Don't forget to include the shortest unique substring starting at text[suff_arr[0]]
     #and also starting at text[sufar[n-1]
-    if sufar[0]+shared[1] + 1 <= n:
-        hashes.append((hash_with_salt(text[sufar[0]:sufar[0]+shared[1]+1],salt),encrypt_integer(sufar[0],block_index_iv,key_index)))
-    if sufar[n-1]+shared[n-1]+1<=n:
-        hashes.append((hash_with_salt(text[sufar[n-1]:sufar[n-1]+shared[n-1]+1],salt),encrypt_integer(sufar[n-1],block_index_iv,key_index)))
-
-    hashes.append((hash_with_salt("",salt),encrypt_integer(0,block_index_iv,key_index)))
-    #Also sort the array to avoid leaking information about the order
-    hashes.sort()
+    if sufar[0]+lcp[1] + 1 <= n:
+        ha1[hash_with_salt(text[sufar[0]:sufar[0]+lcp[1]+1],salt)] = encrypt_integer(sufar[0],block_index_iv,key_index)
+    if sufar[n-1]+lcp[n-1]+1<=n:
+        ha1[hash_with_salt(text[sufar[n-1]:sufar[n-1]+lcp[n-1]+1],salt)] =encrypt_integer(sufar[n-1],block_index_iv,key_index)
     
+    
+
+    #TODO: This line may not be needed
+    #ha1[hash_with_salt("",salt)]=encrypt_integer(0,block_index_iv,key_index)
+    #Also sort the array to avoid leaking information about the order
+    #hashes.sort()
+
+    #ha0 = set(ha0list) #no: set objects are not serializable
+    print "list has size %d, dict has size %d" % (len(ha0list),len(ha1))
+    hashes = [ha0list, ha1]
+
+    print "done: make hashes"    
     return hashes
 
 #x = hash_substrings_o2( "The server encountered an internal error and was unable to complete your request. Either the server is overloaded or there is an error in the application.",0,0)
@@ -148,8 +175,8 @@ def hash_substrings_optimized(text,salt,key_index):
         hashed_prefixes[index]%=modulo
     #print hashed_prefixes
 
-def hash_substrings(text,salt,block_index_iv,key_index):
-    return hash_substrings_o2(text,salt,block_index_iv,key_index)
+def hash_substrings(text,salt,block_index_iv,key_index, path):
+    return hash_substrings_o2(text,salt,block_index_iv,key_index, path)
     '''all_substr=[]
     textLength=len(text)
     for i in range(0,textLength+1):
@@ -299,3 +326,4 @@ print search_substring(query,salt,key_index,block_length)
 #print hashes_server
 #print splitString('aabbccdde',2)
 '''
+
