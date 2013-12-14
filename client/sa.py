@@ -145,8 +145,9 @@ def hash_substrings_o2(text,salt,block_index_iv,key_index, path):
     #hashes.sort()
 
     #ha0 = set(ha0list) #no: set objects are not serializable
-    print "list has size %d, dict has size %d" % (len(ha0list),len(ha1))
+    #print "list has size %d, dict has size %d" % (len(ha0list),len(ha1))
     hashes = [ha0list, ha1]
+    #print hashes
 
     print "done: make hashes"    
     return hashes
@@ -217,12 +218,13 @@ def splitString(string, block_length):
     return blocks
 
 def encrypt_block(block,block_id,block_index_iv,key_blocks):
+#    return block
     Mkey=MD5.new()
     Mkey.update(block_index_iv+str(block_id))
-    iv = Mkey.hexdigest()[:AES.block_size]
+    the_iv = Mkey.hexdigest()[:AES.block_size]
     Mkey=MD5.new()
     Mkey.update(list_to_str(key_blocks))
-    cipher = AES.new(Mkey.hexdigest(), AES.MODE_CFB, iv)
+    cipher = AES.new(Mkey.hexdigest(), AES.MODE_CFB, the_iv)
     #print profile
     encrypted_block = cipher.encrypt(block)
     encrypted_block_ints=[ord(x) for x in encrypted_block]
@@ -236,22 +238,34 @@ def encrypt_block(block,block_id,block_index_iv,key_blocks):
     return encrypted_block_ints
 
 def decrypt_block(encrypted_block,block_id,block_index_iv,key_blocks):
+#    return encrypted_block
     encrypted_block_str=''.join([chr(x) for x in encrypted_block])
     Mkey=MD5.new()
     Mkey.update(block_index_iv+str(block_id))
-    iv = Mkey.hexdigest()[:AES.block_size]
+    the_iv = Mkey.hexdigest()[:AES.block_size]
     Mkey=MD5.new()
     Mkey.update(list_to_str(key_blocks))
     #print profile
     #encrypted_block = iv + cipher.encrypt(block)
     #print block,'->',encrypted_block
     #iv_size = AES.block_size
-    cipher = AES.new(Mkey.hexdigest(), AES.MODE_CFB, iv)
+    cipher = AES.new(Mkey.hexdigest(), AES.MODE_CFB, the_iv)
     block = cipher.decrypt(encrypted_block_str)
     #print 'decrypt: ',encrypted_block,'->',block
     #print dec_profile
     #block=encrypted_block
     return block
+
+def decrypt_blocks(enc_blocks, idx, iv, key):
+    if enc_blocks is None:
+        return None
+    pt = ''
+    counter = 0
+    for block in enc_blocks:
+        pt += decrypt_block(block, idx + counter, iv, key)
+        counter += 1
+    return pt
+        
 
 def encrypt_blocks(text,key_blocks,block_index_iv,block_length):
     blocks=splitString(text,block_length)

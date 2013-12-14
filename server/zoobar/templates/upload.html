@@ -1,0 +1,26 @@
+{% extends "layout.html" %}
+{% block title %}Upload{% endblock %}
+{% block content %}
+{% endblock %}
+{% block postscript %}
+<center>
+<b>You can upload file here</b>
+<form enctype="multipart/form-data" action="upload" method="POST">
+<input type="file" name="file">
+<input type="submit" value="Upload">
+</form>
+<p>{{message}}</p>
+
+<b>Your file:</b><br>
+<table class="log" align="center">
+<tr><th>File</th>
+    <th>Upload Time</th></tr>
+
+{% for file in filestats%}
+<tr><td align="center"><b>{{ file[0] }}</b></td>
+    <td align="center">{{ file[1]}}</td></tr>
+{% endfor %}
+</table>
+
+</center>
+{% endblock %}

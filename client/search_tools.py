@@ -1,13 +1,18 @@
 #!/usr/bin/ python
 #import tools_karkkainen_sanders as tks
-from subprocess import call
 from random import randint
 from ctypes import *
+from Crypto.Cipher import PKCS1_OAEP
+from Crypto.PublicKey import RSA
+from Crypto.Hash import MD5
+from Crypto.Cipher import AES
+from Crypto import Random
+import sa
 
 LEFT = -1
 RIGHT = 1
-PREFIX = "/home/poantsai/6.858/projects/client/"
-BLOCK_SIZE = 4
+PREFIX = "/home/poantsai/6.858/projects/code/client/"
+BLOCK_SIZE = 100
 
 def construct_suf_lcp(path):
     suflib = CDLL(PREFIX + 'lcp_sais/lcp_for_py.so')
@@ -72,35 +77,19 @@ def scramble_tree(root):
     scramble_tree(root.left)
     scramble_tree(root.right)
 
-def encrypt(payload, key, arg):
-    return payload
-
-def align_text(text, offset, kw_len):
-    if text is None or offset is None:
+def align_text(text, sa_idx, kw_len):
+    if text is None or sa_idx is None:
         return None
+    offset = sa_idx % BLOCK_SIZE
     return text[offset:offset + kw_len]
 
-def kw_eq(text, keyword, offset, kw_len):
-#    print kw_len
-#    print offset
-#    print text
-#    print "------"
-    if text is None or offset is None or kw_len > (offset + len(text) - 1):
-        return False
-    for i in range(0, kw_len):
-        if text[+ i] != keyword[i]:
-            return False
-    return True
-
-def decrypt(payload, key, arg):
-    return payload
-
-def decrypt_blocks(payload, key, arg):
+def decrypt_blocks(payload, idx, iv, key):
     if payload is None:
         return None
     pt = ''
     for i in range(0, len(payload)/BLOCK_SIZE):
-        pt += decrypt(payload[i*BLOCK_SIZE:(i+1)*BLOCK_SIZE], key, 1)
+        pt += sa.decrypt_block(payload[i*BLOCK_SIZE:(i+1)*BLOCK_SIZE], \
+              idx, iv, key)
     return pt
 
 def tree_to_array(root):

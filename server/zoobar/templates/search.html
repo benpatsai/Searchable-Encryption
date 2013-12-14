@@ -1,0 +1,21 @@
+{% extends "layout.html" %}
+{% block title %}Search{% endblock %}
+{% block content %}
+<form method="POST" name="searchform">
+<p>Search for: <input name="keyword" type="text" size=10></p>
+<input type="submit" name="submission" value="Submit">
+</form>
+{% endblock %}
+{% block postscript %}
+<center>
+<b>Search result:</b><br>
+<table class="log" align="center">
+<tr><th>File</th>
+    <th>Upload Time</th></tr>
+{% for file in files%}
+<tr><td align="center"><b>{{ file[0] }}</b></td>
+    <td align="center">{{ file[1]}}</td></tr>
+{% endfor %}
+</table>
+</center>
+{% endblock %}
